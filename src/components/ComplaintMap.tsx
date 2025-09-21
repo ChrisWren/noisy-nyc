@@ -849,7 +849,6 @@ export default function ComplaintMap() {
       </div>
 
       <div className="street-hud">
-        <div className="street-hud-heading">Facing {headingShort[heading]}</div>
         <div className="street-hud-coordinates">Lat/Lng: {coordinatesLabel}</div>
         <div className="street-hud-moves" role="status" aria-live="polite">
           <span className={`street-move ${forward ? "street-move--open" : "street-move--blocked"}`}>

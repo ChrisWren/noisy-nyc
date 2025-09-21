@@ -261,14 +261,6 @@ main {
   z-index: 6;
 }
 
-.street-hud-heading {
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: 0.08rem;
-  text-transform: uppercase;
-  color: #f8d74c;
-}
-
 .street-hud-coordinates {
   font-weight: 600;
   color: #8bd5ff;
