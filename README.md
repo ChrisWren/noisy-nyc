@@ -1,32 +1,47 @@
+# NYC 311 Viewer
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
 
-First, create a `.env.local` file in `nyc-311-viewer/` with your Mapillary access token:
+1. Install dependencies:
 
-```
-MAPILLARY_ACCESS_TOKEN=your-token-here
-```
+   ```bash
+   npm install
+   ```
 
-Then run the development server:
+2. Create a `.env.local` file in `nyc-311-viewer/` with your Mapillary access token. The token is consumed in the browser, so use a key that is safe to expose to the client:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+   ```
+   NEXT_PUBLIC_MAPILLARY_ACCESS_TOKEN=your-token-here
+   ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. Start the development server:
 
-Street imagery responses are cached on disk for seven days in `.cache/streetview-cache.json` so repeated visits reuse the same Mapillary shots.
+   ```bash
+   npm run dev
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+   Open [http://localhost:3000](http://localhost:3000) to explore noise complaints around NYC.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Street imagery responses are cached in the browser (local storage + in-memory) for seven days so repeat visits reuse the same Mapillary shots.
+
+## Building & Previewing
+
+- `npm run build` generates a static export in the `out/` directory that is ready to deploy to any static host, including GitHub Pages.
+- `npm start` serves the prebuilt `out/` folder locally using [`serve`](https://www.npmjs.com/package/serve). Run `npm run build` first to make sure `out/` exists (the first execution will ask `npx` to download `serve` if it's not already cached locally).
+
+## Deploying to GitHub Pages
+
+1. Build the site with the repository base path so asset URLs match GitHub Pages (replace `noisy-nyc` with your repository name):
+
+   ```bash
+   NEXT_PUBLIC_BASE_PATH=/noisy-nyc npm run build
+   ```
+
+2. Publish the generated `out/` directory to the branch GitHub Pages serves (e.g. `gh-pages`). You can do this manually or via an action such as [`peaceiris/actions-gh-pages`](https://github.com/peaceiris/actions-gh-pages).
+
+Once deployed, the site will be available at `https://<username>.github.io/<repository-name>/`.
 
 ## Learn More
 
@@ -36,9 +51,3 @@ To learn more about Next.js, take a look at the following resources:
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

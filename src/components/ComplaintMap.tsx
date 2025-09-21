@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import type { StreetViewFrame, StreetViewPayload } from "@/lib/streetviewCache";
+import { fetchStreetView, type StreetViewFrame } from "@/lib/streetviewCache";
 
 import { MapContainer, TileLayer, CircleMarker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -410,11 +410,17 @@ export default function ComplaintMap() {
     const controller = new AbortController();
 
     const [lat, lng] = intersectionLatLng;
-    const params = new URLSearchParams({
-      lat: lat.toString(),
-      lng: lng.toString(),
-      bearing: headingBearings[heading].toString(),
-    });
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setStreetImageError("Street map position is out of bounds.");
+      setStreetFrames([]);
+      setCurrentFrameIndex(0);
+      setIsStreetImageLoading(false);
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
+    }
 
     setIsStreetImageLoading(true);
     setStreetImageError(null);
@@ -427,13 +433,7 @@ export default function ComplaintMap() {
       fadeTimerRef.current = null;
     }
 
-    fetch(`/api/streetview?${params.toString()}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Street view request failed");
-        }
-        return (await response.json()) as StreetViewPayload;
-      })
+    fetchStreetView(lat, lng, headingBearings[heading], { signal: controller.signal })
       .then((data) => {
         if (cancelled) {
           return;
@@ -453,7 +453,8 @@ export default function ComplaintMap() {
         if (cancelled || (error instanceof DOMException && error.name === "AbortError")) {
           return;
         }
-        setStreetImageError("Mapillary imagery unavailable right now.");
+        const message = error instanceof Error ? error.message : "Mapillary imagery unavailable right now.";
+        setStreetImageError(message);
         setStreetFrames([]);
         setCurrentFrameIndex(0);
       })
@@ -625,7 +626,7 @@ export default function ComplaintMap() {
           attributionControl={false}
           keyboard={false}
           style={{ height: "100%", width: "100%" }}
-          whenCreated={(mapInstance) => {
+          ref={(mapInstance) => {
             minimapRef.current = mapInstance;
           }}
         >
