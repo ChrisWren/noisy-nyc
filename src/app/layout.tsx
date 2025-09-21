@@ -1,22 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "bootstrap/dist/css/bootstrap.min.css";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
-
 export const metadata: Metadata = {
-  title: "NYC 311 Service Requests",
-  description: "A viewer for the 1000 most recent NYC 311 service requests.",
+  title: "NYC 311 Driving Simulator",
+  description: "A 3D visualization of NYC 311 noise complaints.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body>{children}</body>
     </html>
   );
+}

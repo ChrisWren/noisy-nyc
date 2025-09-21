@@ -2,7 +2,13 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, create a `.env.local` file in `nyc-311-viewer/` with your Mapillary access token:
+
+```
+MAPILLARY_ACCESS_TOKEN=your-token-here
+```
+
+Then run the development server:
 
 ```bash
 npm run dev
@@ -15,6 +21,8 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+Street imagery responses are cached on disk for seven days in `.cache/streetview-cache.json` so repeated visits reuse the same Mapillary shots.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
