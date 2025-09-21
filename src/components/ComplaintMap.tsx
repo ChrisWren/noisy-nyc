@@ -5,7 +5,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { fetchStreetView, type StreetViewFrame } from "@/lib/streetviewCache";
 
-import { MapContainer, TileLayer, CircleMarker } from "react-leaflet";
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -16,11 +16,6 @@ type GridPosition = {
 };
 
 type Heading = "north" | "east" | "south" | "west";
-
-type IntersectionLabel = {
-  street: string;
-  avenue: string;
-};
 
 type LatLng = [number, number];
 
@@ -60,24 +55,6 @@ const GRID_BOUNDS = {
   maxStreet: 55,
   minAvenue: -6,
   maxAvenue: 6,
-};
-
-const ORIGIN_STREET_NUMBER = 45;
-const ORIGIN_AVENUE_NUMBER = 7;
-
-const AVENUE_LABELS: Record<number, string> = {
-  1: "1st Ave",
-  2: "2nd Ave",
-  3: "3rd Ave",
-  4: "Lexington Ave",
-  5: "Madison Ave",
-  6: "6th Ave",
-  7: "7th Ave",
-  8: "8th Ave",
-  9: "9th Ave",
-  10: "10th Ave",
-  11: "11th Ave",
-  12: "12th Ave",
 };
 
 const NEARBY_COMPLAINT_THRESHOLD_METERS = 90;
@@ -171,28 +148,6 @@ const computeLatLngFromGrid = ({ street, avenue }: GridPosition): LatLng => {
   return position;
 };
 
-const ordinalSuffix = (value: number) => {
-  const absValue = Math.abs(value);
-  const lastDigit = absValue % 10;
-  const lastTwoDigits = absValue % 100;
-
-  if (lastTwoDigits >= 11 && lastTwoDigits <= 13) {
-    return `${value}th`;
-  }
-
-  if (lastDigit === 1) {
-    return `${value}st`;
-  }
-  if (lastDigit === 2) {
-    return `${value}nd`;
-  }
-  if (lastDigit === 3) {
-    return `${value}rd`;
-  }
-
-  return `${value}th`;
-};
-
 const computeGridFromLatLng = ([lat, lng]: LatLng): GridPosition | null => {
   const latDistance = distanceBetween([lat, INITIAL_LAT_LNG[1]], [INITIAL_LAT_LNG[0], INITIAL_LAT_LNG[1]]);
   const lngDistance = distanceBetween([INITIAL_LAT_LNG[0], lng], [INITIAL_LAT_LNG[0], INITIAL_LAT_LNG[1]]);
@@ -211,31 +166,6 @@ const computeGridFromLatLng = ([lat, lng]: LatLng): GridPosition | null => {
 
   return { street: streetBlocks, avenue: avenueBlocks };
 };
-
-const formatStreetLabel = (position: GridPosition): string => {
-  const streetNumber = ORIGIN_STREET_NUMBER + position.street;
-  const avenueNumber = ORIGIN_AVENUE_NUMBER + position.avenue;
-  const eastWestPrefix = avenueNumber >= 5 ? "W" : "E";
-  return `${eastWestPrefix} ${ordinalSuffix(streetNumber)} St`;
-};
-
-const formatAvenueLabel = (position: GridPosition): string => {
-  const avenueNumber = ORIGIN_AVENUE_NUMBER + position.avenue;
-  if (AVENUE_LABELS[avenueNumber]) {
-    return AVENUE_LABELS[avenueNumber]!;
-  }
-  return `${ordinalSuffix(avenueNumber)} Ave`;
-};
-
-const describeIntersection = (position: GridPosition): IntersectionLabel => ({
-  street: formatStreetLabel(position),
-  avenue: formatAvenueLabel(position),
-});
-
-const clampToBounds = (candidate: GridPosition): GridPosition => ({
-  street: Math.min(Math.max(candidate.street, GRID_BOUNDS.minStreet), GRID_BOUNDS.maxStreet),
-  avenue: Math.min(Math.max(candidate.avenue, GRID_BOUNDS.minAvenue), GRID_BOUNDS.maxAvenue),
-});
 
 const isWithinBounds = (candidate: GridPosition) => {
   return (
@@ -294,19 +224,46 @@ export default function ComplaintMap() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const audioBufferPromiseRef = useRef<Promise<AudioBuffer> | null>(null);
+  const [toast, setToast] = useState<{
+    key: number;
+    title: string;
+    description: string | null;
+    visible: boolean;
+  } | null>(null);
+  const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastRemoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const complaintAudioUrl = "/audio/street_party_noise-1758427732963.mp3";
+  const minimapHeading = headingBearings[heading];
+  const minimapIcon = useMemo<L.DivIcon | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    return L.divIcon({
+      className: "street-mini-map__icon",
+      html: `<div class="street-mini-map__arrow" style="transform: rotate(${minimapHeading}deg);"></div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    });
+  }, [minimapHeading]);
 
   const rawIntersectionLatLng = useMemo(() => computeLatLngFromGrid(position), [position]);
 
-  const { displayGrid, intersectionLatLng } = useMemo(() => {
+  const intersectionLatLng = useMemo(() => {
     const snappedGrid = computeGridFromLatLng(rawIntersectionLatLng);
     if (!snappedGrid) {
-      return { displayGrid: position, intersectionLatLng: rawIntersectionLatLng };
+      return rawIntersectionLatLng;
     }
-    return { displayGrid: snappedGrid, intersectionLatLng: computeLatLngFromGrid(snappedGrid) };
-  }, [position, rawIntersectionLatLng]);
+    return computeLatLngFromGrid(snappedGrid);
+  }, [rawIntersectionLatLng]);
 
-  const currentIntersection = useMemo(() => describeIntersection(displayGrid), [displayGrid]);
+  const coordinatesLabel = useMemo(() => {
+    const [lat, lng] = intersectionLatLng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return "--";
+    }
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }, [intersectionLatLng]);
 
   useEffect(() => {
     let cancelled = false;
@@ -490,6 +447,33 @@ export default function ComplaintMap() {
       });
   }, [loadComplaintAudio]);
 
+  const showToast = useCallback((title: string, description: string | null) => {
+    if (toastHideTimerRef.current) {
+      clearTimeout(toastHideTimerRef.current);
+      toastHideTimerRef.current = null;
+    }
+    if (toastRemoveTimerRef.current) {
+      clearTimeout(toastRemoveTimerRef.current);
+      toastRemoveTimerRef.current = null;
+    }
+
+    setToast({ key: Date.now(), title, description, visible: true });
+
+    toastHideTimerRef.current = setTimeout(() => {
+      setToast((current) => {
+        if (!current) {
+          return current;
+        }
+        return { ...current, visible: false };
+      });
+      toastRemoveTimerRef.current = setTimeout(() => {
+        setToast(null);
+        toastRemoveTimerRef.current = null;
+      }, 320);
+      toastHideTimerRef.current = null;
+    }, 5200);
+  }, []);
+
   useEffect(() => {
     if (complaints.length === 0) {
       return;
@@ -535,8 +519,18 @@ export default function ComplaintMap() {
     setStatusLine(
       `311 noise complaint nearby: ${descriptor}${createdLabel ? ` · filed ${createdLabel}` : ""} (~${distanceLabel}).`
     );
+    const toastDetails = [
+      descriptor,
+      createdLabel ? `Filed ${createdLabel}` : null,
+      closestComplaint.complaint.id ? `Case ${closestComplaint.complaint.id}` : null,
+      `≈ ${distanceLabel} away`,
+    ]
+      .filter((item): item is string => Boolean(item && item.trim()))
+      .join(" · ");
+
+    showToast("Party encountered!", toastDetails || null);
     playComplaintAlert();
-  }, [complaints, intersectionLatLng, playComplaintAlert]);
+  }, [complaints, intersectionLatLng, playComplaintAlert, showToast]);
 
   const canMove = useCallback((from: GridPosition, direction: Heading) => {
     const vector = headingVectors[direction];
@@ -563,15 +557,6 @@ export default function ComplaintMap() {
 
   const { forward, backward, left, right } = availableMoves;
 
-  const nextIntersection = useMemo(() => {
-    const vector = headingVectors[heading];
-    const nextPosition: GridPosition = {
-      street: position.street + vector.street,
-      avenue: position.avenue + vector.avenue,
-    };
-    return describeIntersection(clampToBounds(nextPosition));
-  }, [heading, position]);
-
   const moveOneBlock = useCallback(
     (movementHeading: Heading) => {
       setPosition((prev) => {
@@ -585,9 +570,16 @@ export default function ComplaintMap() {
           return prev;
         }
 
-        const nextIntersectionLabel = describeIntersection(candidate);
+        const candidateLatLng = computeLatLngFromGrid(candidate);
+        const candidateLabel =
+          Number.isFinite(candidateLatLng[0]) && Number.isFinite(candidateLatLng[1])
+            ? `${candidateLatLng[0].toFixed(5)}, ${candidateLatLng[1].toFixed(5)}`
+            : null;
+
         setStatusLine(
-          `Rolling ${headingDescriptions[movementHeading]} toward ${nextIntersectionLabel.street} and ${nextIntersectionLabel.avenue}.`
+          candidateLabel
+            ? `Rolling ${headingDescriptions[movementHeading]} toward ${candidateLabel}.`
+            : `Rolling ${headingDescriptions[movementHeading]}.`
         );
 
         return candidate;
@@ -791,6 +783,15 @@ export default function ComplaintMap() {
         });
         audioContextRef.current = null;
       }
+      if (toastHideTimerRef.current) {
+        clearTimeout(toastHideTimerRef.current);
+        toastHideTimerRef.current = null;
+      }
+      if (toastRemoveTimerRef.current) {
+        clearTimeout(toastRemoveTimerRef.current);
+        toastRemoveTimerRef.current = null;
+      }
+      setToast(null);
       audioBufferRef.current = null;
       audioBufferPromiseRef.current = null;
     };
@@ -847,20 +848,9 @@ export default function ComplaintMap() {
         </div>
       </div>
 
-      <div className="street-sign" role="presentation">
-        <div className="street-sign-post">
-          <div className="street-sign-panels">
-            <div className="street-sign-panel street-sign-panel--primary">{currentIntersection.street}</div>
-            <div className="street-sign-panel street-sign-panel--secondary street-sign-panel--perpendicular">{currentIntersection.avenue}</div>
-          </div>
-        </div>
-      </div>
-
       <div className="street-hud">
         <div className="street-hud-heading">Facing {headingShort[heading]}</div>
-        <div className="street-hud-next">
-          Next intersection: {nextIntersection.street} &amp; {nextIntersection.avenue}
-        </div>
+        <div className="street-hud-coordinates">Lat/Lng: {coordinatesLabel}</div>
         <div className="street-hud-moves" role="status" aria-live="polite">
           <span className={`street-move ${forward ? "street-move--open" : "street-move--blocked"}`}>
             ↑ Forward
@@ -905,14 +895,23 @@ export default function ComplaintMap() {
           }}
         >
           <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-          <CircleMarker
-            center={intersectionLatLng}
-            radius={6}
-            pathOptions={{ color: "#f8d74c", fillColor: "#f8d74c", fillOpacity: 0.9, opacity: 0.9 }}
-          />
+          {minimapIcon ? (
+            <Marker position={intersectionLatLng} icon={minimapIcon} interactive={false} />
+          ) : null}
         </MapContainer>
       </div>
       <div className="street-attribution">© Mapillary</div>
+      {toast ? (
+        <div
+          key={toast.key}
+          className={`street-toast ${toast.visible ? "street-toast--visible" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="street-toast__title">{toast.title}</div>
+          {toast.description ? <div className="street-toast__body">{toast.description}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
