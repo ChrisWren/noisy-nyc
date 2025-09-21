@@ -24,6 +24,23 @@ type IntersectionLabel = {
 
 type LatLng = [number, number];
 
+type NoiseComplaint = {
+  id: string;
+  lat: number;
+  lng: number;
+  descriptor: string | null;
+  createdAt: string | null;
+};
+
+type RawComplaint = {
+  unique_key?: string;
+  latitude?: string;
+  longitude?: string;
+  descriptor?: string;
+  created_date?: string;
+  complaint_type?: string;
+};
+
 const headingOrder: Heading[] = ["north", "east", "south", "west"];
 const headingVectors: Record<Heading, GridPosition> = {
   north: { street: 1, avenue: 0 },
@@ -62,6 +79,8 @@ const AVENUE_LABELS: Record<number, string> = {
   11: "11th Ave",
   12: "12th Ave",
 };
+
+const NEARBY_COMPLAINT_THRESHOLD_METERS = 90;
 
 const rotateHeading = (heading: Heading, turn: "left" | "right"): Heading => {
   const index = headingOrder.indexOf(heading);
@@ -114,6 +133,17 @@ const distanceBetween = (a: LatLng, b: LatLng) => {
   const aa = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
   const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
   return earthRadius * c;
+};
+
+const parseCoordinate = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 };
 
 const INITIAL_LAT_LNG: LatLng = [40.758, -73.9855];
@@ -259,6 +289,9 @@ export default function ComplaintMap() {
   const [isStreetImageLoading, setIsStreetImageLoading] = useState(false);
   const previousFrameRef = useRef<StreetViewFrame | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [complaints, setComplaints] = useState<NoiseComplaint[]>([]);
+  const triggeredComplaintsRef = useRef<Set<string>>(new Set());
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const rawIntersectionLatLng = useMemo(() => computeLatLngFromGrid(position), [position]);
 
@@ -271,6 +304,192 @@ export default function ComplaintMap() {
   }, [position, rawIntersectionLatLng]);
 
   const currentIntersection = useMemo(() => describeIntersection(displayGrid), [displayGrid]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadComplaints = async () => {
+      try {
+        const params = new URLSearchParams({
+          $select: "unique_key,latitude,longitude,descriptor,created_date,complaint_type",
+          $where: "latitude IS NOT NULL AND longitude IS NOT NULL AND complaint_type like 'Noise%'",
+          $order: "created_date DESC",
+          $limit: "2000",
+        });
+        const response = await fetch(
+          `https://data.cityofnewyork.us/resource/erm2-nwe9.json?${params.toString()}`,
+          {
+            signal: controller.signal,
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Noise complaint request failed (${response.status})`);
+        }
+
+        const raw = (await response.json()) as RawComplaint[];
+        if (cancelled) {
+          return;
+        }
+
+        const parsedComplaints: NoiseComplaint[] = [];
+        const seenIds = new Set<string>();
+
+        raw.forEach((item) => {
+          const id = typeof item.unique_key === "string" && item.unique_key.trim() ? item.unique_key.trim() : null;
+          if (!id || seenIds.has(id)) {
+            return;
+          }
+
+          const lat = parseCoordinate(item.latitude);
+          const lng = parseCoordinate(item.longitude);
+          if (lat === null || lng === null) {
+            return;
+          }
+
+          const gridPosition = computeGridFromLatLng([lat, lng]);
+          if (!gridPosition) {
+            return;
+          }
+
+          seenIds.add(id);
+          parsedComplaints.push({
+            id,
+            lat,
+            lng,
+            descriptor: typeof item.descriptor === "string" && item.descriptor.trim() ? item.descriptor.trim() : null,
+            createdAt: typeof item.created_date === "string" && item.created_date.trim() ? item.created_date.trim() : null,
+          });
+        });
+
+        setComplaints(parsedComplaints);
+      } catch (error) {
+        if (cancelled || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+        console.error("Failed to load NYC noise complaints", error);
+      }
+    };
+
+    loadComplaints();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  const playComplaintAlert = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const win = window as typeof window & { webkitAudioContext?: typeof AudioContext };
+    const AudioContextClass = win.AudioContext ?? win.webkitAudioContext;
+    if (!AudioContextClass) {
+      return;
+    }
+
+    if (!audioContextRef.current) {
+      try {
+        audioContextRef.current = new AudioContextClass();
+      } catch (error) {
+        console.error("Unable to initialise audio context", error);
+        audioContextRef.current = null;
+        return;
+      }
+    }
+
+    const context = audioContextRef.current;
+    if (!context) {
+      return;
+    }
+
+    const playTone = () => {
+      const now = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(880, now);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.3, now + 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.00001, now + 0.5);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start(now);
+      oscillator.stop(now + 0.5);
+    };
+
+    if (context.state === "suspended") {
+      context
+        .resume()
+        .then(() => {
+          playTone();
+        })
+        .catch((error) => {
+          console.error("Unable to resume audio context", error);
+        });
+      return;
+    }
+
+    playTone();
+  }, []);
+
+  useEffect(() => {
+    if (complaints.length === 0) {
+      return;
+    }
+
+    const [lat, lng] = intersectionLatLng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return;
+    }
+
+    let closestComplaint: { complaint: NoiseComplaint; distanceMeters: number } | null = null;
+
+    for (const complaint of complaints) {
+      const distanceMeters = distanceBetween(intersectionLatLng, [complaint.lat, complaint.lng]);
+      if (!Number.isFinite(distanceMeters) || distanceMeters > NEARBY_COMPLAINT_THRESHOLD_METERS) {
+        continue;
+      }
+      if (!closestComplaint || distanceMeters < closestComplaint.distanceMeters) {
+        closestComplaint = { complaint, distanceMeters };
+      }
+    }
+
+    if (!closestComplaint) {
+      return;
+    }
+
+    const triggered = triggeredComplaintsRef.current;
+    if (triggered.has(closestComplaint.complaint.id)) {
+      return;
+    }
+
+    triggered.add(closestComplaint.complaint.id);
+
+    const descriptor = closestComplaint.complaint.descriptor ?? "Noise complaint";
+    const createdDate = closestComplaint.complaint.createdAt ? new Date(closestComplaint.complaint.createdAt) : null;
+    const createdLabel = createdDate && !Number.isNaN(createdDate.valueOf()) ? createdDate.toLocaleDateString() : null;
+    const distanceFeet = Math.round(closestComplaint.distanceMeters * 3.28084);
+    const distanceLabel =
+      closestComplaint.distanceMeters >= 150
+        ? `${Math.round(closestComplaint.distanceMeters)} meters`
+        : `${Math.max(distanceFeet, 10)} feet`;
+
+    setStatusLine(
+      `311 noise complaint nearby: ${descriptor}${createdLabel ? ` · filed ${createdLabel}` : ""} (~${distanceLabel}).`
+    );
+    playComplaintAlert();
+  }, [complaints, intersectionLatLng, playComplaintAlert]);
 
   const canMove = useCallback((from: GridPosition, direction: Heading) => {
     const vector = headingVectors[direction];
@@ -518,6 +737,12 @@ export default function ComplaintMap() {
       if (fadeTimerRef.current) {
         clearTimeout(fadeTimerRef.current);
         fadeTimerRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {
+          // Ignore teardown issues when leaving the page.
+        });
+        audioContextRef.current = null;
       }
     };
   }, []);
