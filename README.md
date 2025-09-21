@@ -28,20 +28,8 @@ Street imagery responses are cached in the browser (local storage + in-memory) f
 
 ## Building & Previewing
 
-- `npm run build` generates a static export in the `out/` directory that is ready to deploy to any static host, including GitHub Pages.
-- `npm start` serves the prebuilt `out/` folder locally using [`serve`](https://www.npmjs.com/package/serve). Run `npm run build` first to make sure `out/` exists (the first execution will ask `npx` to download `serve` if it's not already cached locally).
-
-## Deploying to GitHub Pages
-
-1. Build the site with the repository base path so asset URLs match GitHub Pages (replace `noisy-nyc` with your repository name):
-
-   ```bash
-   NEXT_PUBLIC_BASE_PATH=/noisy-nyc npm run build
-   ```
-
-2. Publish the generated `out/` directory to the branch GitHub Pages serves (e.g. `gh-pages`). You can do this manually or via an action such as [`peaceiris/actions-gh-pages`](https://github.com/peaceiris/actions-gh-pages).
-
-Once deployed, the site will be available at `https://<username>.github.io/<repository-name>/`.
+- `npm run build` creates a production build in the `.next/` directory.
+- `npm start` runs the compiled build with the Next.js production server. Run `npm run build` first so the compiled assets are available.
 
 ## Learn More
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
+import noiseComplaintAudio from "@/audio/street_party_noise-1758427732963.mp3";
 import { fetchStreetView, type StreetViewFrame } from "@/lib/streetviewCache";
 
 import { MapContainer, TileLayer, CircleMarker } from "react-leaflet";
@@ -292,6 +293,8 @@ export default function ComplaintMap() {
   const [complaints, setComplaints] = useState<NoiseComplaint[]>([]);
   const triggeredComplaintsRef = useRef<Set<string>>(new Set());
   const audioContextRef = useRef<AudioContext | null>(null);
+  const audioBufferRef = useRef<AudioBuffer | null>(null);
+  const audioBufferPromiseRef = useRef<Promise<AudioBuffer> | null>(null);
 
   const rawIntersectionLatLng = useMemo(() => computeLatLngFromGrid(position), [position]);
 
@@ -383,6 +386,41 @@ export default function ComplaintMap() {
     };
   }, []);
 
+  const loadComplaintAudio = useCallback(
+    async (context: AudioContext) => {
+      if (audioBufferRef.current) {
+        return audioBufferRef.current;
+      }
+
+      if (!audioBufferPromiseRef.current) {
+        audioBufferPromiseRef.current = fetch(noiseComplaintAudio)
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to load complaint audio (${response.status})`);
+            }
+            return response.arrayBuffer();
+          })
+          .then(
+            (arrayBuffer) =>
+              new Promise<AudioBuffer>((resolve, reject) => {
+                context.decodeAudioData(arrayBuffer, resolve, reject);
+              })
+          )
+          .then((buffer) => {
+            audioBufferRef.current = buffer;
+            return buffer;
+          })
+          .catch((error) => {
+            audioBufferPromiseRef.current = null;
+            throw error;
+          });
+      }
+
+      return audioBufferPromiseRef.current;
+    },
+    []
+  );
+
   const playComplaintAlert = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -409,39 +447,48 @@ export default function ComplaintMap() {
       return;
     }
 
-    const playTone = () => {
+    const playBuffer = (buffer: AudioBuffer) => {
       const now = context.currentTime;
-      const oscillator = context.createOscillator();
+      const source = context.createBufferSource();
       const gain = context.createGain();
 
-      oscillator.type = "triangle";
-      oscillator.frequency.setValueAtTime(880, now);
-
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.3, now + 0.06);
-      gain.gain.exponentialRampToValueAtTime(0.00001, now + 0.5);
-
-      oscillator.connect(gain);
+      source.buffer = buffer;
+      source.connect(gain);
       gain.connect(context.destination);
+      gain.gain.setValueAtTime(0.7, now);
 
-      oscillator.start(now);
-      oscillator.stop(now + 0.5);
+      source.start(now);
     };
 
-    if (context.state === "suspended") {
-      context
-        .resume()
-        .then(() => {
-          playTone();
-        })
-        .catch((error) => {
-          console.error("Unable to resume audio context", error);
-        });
+    const ensurePlayback = (buffer: AudioBuffer) => {
+      if (context.state === "suspended") {
+        context
+          .resume()
+          .then(() => {
+            playBuffer(buffer);
+          })
+          .catch((error) => {
+            console.error("Unable to resume audio context", error);
+          });
+        return;
+      }
+
+      playBuffer(buffer);
+    };
+
+    if (audioBufferRef.current) {
+      ensurePlayback(audioBufferRef.current);
       return;
     }
 
-    playTone();
-  }, []);
+    loadComplaintAudio(context)
+      .then((buffer) => {
+        ensurePlayback(buffer);
+      })
+      .catch((error) => {
+        console.error("Unable to play complaint audio", error);
+      });
+  }, [loadComplaintAudio]);
 
   useEffect(() => {
     if (complaints.length === 0) {
@@ -744,6 +791,8 @@ export default function ComplaintMap() {
         });
         audioContextRef.current = null;
       }
+      audioBufferRef.current = null;
+      audioBufferPromiseRef.current = null;
     };
   }, []);
 
