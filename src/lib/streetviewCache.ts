@@ -175,8 +175,6 @@ export const setCachedStreetView = async (
   saveToStorage(cacheKey, entry);
 };
 
-const MAPILLARY_GRAPH_ENDPOINT = "https://graph.mapillary.com/images";
-
 const normalizeBearingDifference = (a: number, b: number) => {
   const diff = Math.abs(a - b) % 360;
   return diff > 180 ? 360 - diff : diff;
@@ -213,37 +211,18 @@ export const fetchStreetView = async (
     return cached;
   }
 
-  const accessToken = process.env.NEXT_PUBLIC_MAPILLARY_ACCESS_TOKEN;
-  if (!accessToken) {
-    throw new Error("Street imagery unavailable. No access token configured.");
-  }
-
-  const BBOX_HALF_WIDTH_METERS = 110;
-  const metersPerDegreeLat = 111_320;
-  const cosLat = Math.abs(Math.cos((lat * Math.PI) / 180));
-  const metersPerDegreeLng = 111_320 * Math.max(cosLat, 0.000001);
-  const deltaLat = BBOX_HALF_WIDTH_METERS / metersPerDegreeLat;
-  const deltaLng = BBOX_HALF_WIDTH_METERS / metersPerDegreeLng;
-
-  const minLat = lat - deltaLat;
-  const maxLat = lat + deltaLat;
-  const minLng = lng - deltaLng;
-  const maxLng = lng + deltaLng;
-
-  const mapillaryUrl = new URL(MAPILLARY_GRAPH_ENDPOINT);
-  mapillaryUrl.searchParams.set("access_token", accessToken);
-  mapillaryUrl.searchParams.set("limit", "12");
-  mapillaryUrl.searchParams.set("bbox", `${minLng},${minLat},${maxLng},${maxLat}`);
-  mapillaryUrl.searchParams.set(
-    "fields",
-    ["id", "thumb_2048_url", "thumb_1024_url", "thumb_512_url", "captured_at", "compass_angle"].join(",")
-  );
-
   throwIfAborted();
 
   let response: Response;
   try {
-    response = await fetch(mapillaryUrl.toString(), {
+    const apiParams = new URLSearchParams({
+      lat: lat.toString(),
+      lng: lng.toString(),
+      limit: "12",
+      fields: ["id", "thumb_2048_url", "thumb_1024_url", "thumb_512_url", "captured_at", "compass_angle"].join(","),
+    });
+
+    response = await fetch(`/api/street-view?${apiParams.toString()}`, {
       headers: {
         Accept: "application/json",
       },
@@ -252,9 +231,7 @@ export const fetchStreetView = async (
     });
   } catch (error) {
     throwIfAborted();
-    throw error instanceof Error
-      ? error
-      : new Error("Failed to reach street imagery service.");
+    throw error instanceof Error ? error : new Error("Failed to reach street imagery service.");
   }
 
   if (!response.ok) {

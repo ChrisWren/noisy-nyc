@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import noiseComplaintAudio from "@/audio/street_party_noise-1758427732963.mp3";
 import { fetchStreetView, type StreetViewFrame } from "@/lib/streetviewCache";
 
 import { MapContainer, TileLayer, CircleMarker } from "react-leaflet";
@@ -295,6 +294,7 @@ export default function ComplaintMap() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const audioBufferPromiseRef = useRef<Promise<AudioBuffer> | null>(null);
+  const complaintAudioUrl = "/audio/street_party_noise-1758427732963.mp3";
 
   const rawIntersectionLatLng = useMemo(() => computeLatLngFromGrid(position), [position]);
 
@@ -393,7 +393,7 @@ export default function ComplaintMap() {
       }
 
       if (!audioBufferPromiseRef.current) {
-        audioBufferPromiseRef.current = fetch(noiseComplaintAudio)
+        audioBufferPromiseRef.current = fetch(complaintAudioUrl)
           .then((response) => {
             if (!response.ok) {
               throw new Error(`Failed to load complaint audio (${response.status})`);
@@ -418,7 +418,7 @@ export default function ComplaintMap() {
 
       return audioBufferPromiseRef.current;
     },
-    []
+    [complaintAudioUrl]
   );
 
   const playComplaintAlert = useCallback(() => {

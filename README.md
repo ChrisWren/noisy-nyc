@@ -13,7 +13,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 2. Create a `.env.local` file in `nyc-311-viewer/` with your Mapillary access token. The token is consumed in the browser, so use a key that is safe to expose to the client:
 
    ```
-   NEXT_PUBLIC_MAPILLARY_ACCESS_TOKEN=your-token-here
+   MAPILLARY_ACCESS_TOKEN=your-token-here
    ```
 
 3. Start the development server:
